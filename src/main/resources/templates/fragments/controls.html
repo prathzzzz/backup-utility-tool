@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+    <!-- Controls Fragment -->
+    <div th:fragment="controls" class="controls-section">
+        <!-- Progress Section (Hidden by default) -->
+        <div th:replace="~{fragments/progress :: progressSection}"></div>
+
+        <!-- Control Buttons -->
+        <div class="d-flex flex-wrap align-items-center mb-3">
+            <!-- DC to DR Transfer Options -->
+            <div class="btn-group">
+                <button
+                    type="button"
+                    class="btn btn-clean dropdown-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                >
+                    <i class="bi bi-arrow-right"></i> DC → DR Transfer
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <a
+                            class="dropdown-item"
+                            href="#"
+                            onclick="transferManager.start('DC', 'incremental')"
+                        >
+                            <strong>Incremental Sync</strong>
+                            <br />
+                            <small class="text-muted">Transfer only changed files (recommended)</small>
+                        </a>
+                    </li>
+                    <li>
+                        <hr class="dropdown-divider" />
+                    </li>
+                    <li>
+                        <a
+                            class="dropdown-item"
+                            href="#"
+                            onclick="transferManager.start('DC', 'full')"
+                        >
+                            <strong>Full Transfer</strong>
+                            <br />
+                            <small class="text-muted">Transfer all files (use for initial sync)</small>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- DR to DC Transfer Options -->
+            <div class="btn-group">
+                <button
+                    type="button"
+                    class="btn btn-clean dropdown-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                >
+                    <i class="bi bi-arrow-left"></i> DR → DC Transfer
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <a
+                            class="dropdown-item"
+                            href="#"
+                            onclick="transferManager.start('DR', 'full')"
+                        >
+                            <strong>Full Transfer</strong>
+                            <br />
+                            <small class="text-muted">Transfer all files from DR to DC</small>
+                        </a>
+                    </li>
+                    <li>
+                        <hr class="dropdown-divider" />
+                    </li>
+                    <li>
+                        <a
+                            class="dropdown-item"
+                            href="#"
+                            onclick="transferManager.start('DR', 'incremental')"
+                        >
+                            <strong>Incremental Sync</strong>
+                            <br />
+                            <small class="text-muted">Transfer only changed files</small>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Sync Status Check -->
+            <button
+                type="button"
+                class="btn btn-clean"
+                id="checkSyncBtn"
+                onclick="syncManager.checkStatus()"
+            >
+                <i class="bi bi-search"></i> Check Sync Status
+            </button>
+
+            <!-- Auto-refresh toggle -->
+            <div class="form-check ms-auto">
+                <input class="form-check-input" type="checkbox" id="autoRefresh" checked />
+                <label class="form-check-label" for="autoRefresh">Auto-refresh</label>
+            </div>
+        </div>
+
+        <!-- Alert Section -->
+        <div id="alertSection"></div>
+    </div>
+</body>
+</html>

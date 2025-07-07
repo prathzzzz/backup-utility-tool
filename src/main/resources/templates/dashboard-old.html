@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DC-DR Transfer Dashboard</title>
+
+    <!-- External CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css"
+      rel="stylesheet"
+    />
+
+    <!-- External JS -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+    <!-- Custom Styles -->
+    <style>
+      /* ==================== BASE STYLES ==================== */
+      body {
+        background: #f8f9fa;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+      }
+
+      /* ==================== LAYOUT COMPONENTS ==================== */
+      .main-container {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin: 20px auto;
+        max-width: 1200px;
+      }
+
+      .header-section {
+        background: #343a40;
+        color: white;
+        padding: 20px 30px;
+        border-radius: 8px 8px 0 0;
+      }
+
+      .controls-section {
+        padding: 20px 30px;
+        border-bottom: 1px solid #e9ecef;
+        background: #f8f9fa;
+      }
+
+      .table-section {
+        padding: 20px 30px;
+      }
+
+      /* ==================== BUTTONS ==================== */
+      .btn-clean {
+        padding: 8px 16px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: white;
+        color: #495057;
+        margin-right: 8px;
+        transition: all 0.2s ease;
+      }
+
+      .btn-clean:hover {
+        border-color: #007bff;
+        color: #007bff;
+      }
+
+      .btn-clean.btn-primary {
+        background: #007bff;
+        border-color: #007bff;
+        color: white;
+      }
+
+      .btn-clean.btn-primary:hover {
+        background: #0056b3;
+        border-color: #0056b3;
+      }
+
+      /* ==================== DROPDOWN IMPROVEMENTS ==================== */
+      .btn-group {
+        margin-right: 8px;
+      }
+
+      .btn-group .dropdown-toggle {
+        padding: 8px 16px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: white;
+        color: #495057;
+        transition: all 0.2s ease;
+      }
+
+      .btn-group .dropdown-toggle:hover {
+        border-color: #007bff;
+        color: #007bff;
+      }
+
+      .btn-group .btn-primary.dropdown-toggle {
+        background: #007bff;
+        border-color: #007bff;
+        color: white;
+      }
+
+      .btn-group .btn-primary.dropdown-toggle:hover {
+        background: #0056b3;
+        border-color: #0056b3;
+      }
+
+      .dropdown-menu {
+        min-width: 280px;
+        z-index: 1050;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        border-radius: 0.375rem;
+      }
+
+      .dropdown-item {
+        padding: 12px 16px;
+      }
+
+      .dropdown-item:hover {
+        background-color: #f8f9fa;
+      }
+
+      .dropdown-item small {
+        font-size: 0.75rem;
+        margin-top: 2px;
+      }
+
+      .dropdown-toggle::after {
+        display: inline-block;
+        margin-left: 0.255em;
+        vertical-align: 0.255em;
+        content: "";
+        border-top: 0.3em solid;
+        border-right: 0.3em solid transparent;
+        border-bottom: 0;
+        border-left: 0.3em solid transparent;
+      }
+
+      .show > .dropdown-menu {
+        display: block;
+      }
+
+      /* ==================== TABLES ==================== */
+      .section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #495057;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e9ecef;
+      }
+
+      .table {
+        font-size: 0.9rem;
+      }
+
+      .table th {
+        background: #f8f9fa;
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 600;
+        color: #495057;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .table td {
+        border-color: #f1f3f4;
+        vertical-align: middle;
+      }
+
+      .table tbody tr:hover {
+        background-color: #f8f9fa;
+      }
+
+      /* ==================== STATUS BADGES ==================== */
+      .status-badge {
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+      }
+
+      .badge-matched {
+        background: #d4edda;
+        color: #155724;
+      }
+      .badge-mismatch {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .badge-missing {
+        background: #fff3cd;
+        color: #856404;
+      }
+      .badge-extra {
+        background: #d1ecf1;
+        color: #0c5460;
+      }
+      .badge-success {
+        background: #d4edda;
+        color: #155724;
+      }
+      .badge-failed {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .badge-removed {
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      /* ==================== PRIORITY INDICATORS ==================== */
+      .priority-high {
+        border-left: 4px solid #dc3545;
+      }
+      .priority-medium {
+        border-left: 4px solid #ffc107;
+      }
+      .summary-row {
+        background: #f8f9fa;
+        font-style: italic;
+        color: #6c757d;
+      }
+
+      /* ==================== STATUS INDICATOR ==================== */
+      .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: #e9ecef;
+        border-radius: 4px;
+        font-size: 0.9rem;
+      }
+
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ==================== UTILITY CLASSES ==================== */
+      .quick-status {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #6c757d;
+        margin-bottom: 15px;
+      }
+
+      /* ==================== PROGRESS TRACKING ==================== */
+      .progress-section {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      .progress-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .progress-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0;
+      }
+
+      .progress-status {
+        background: rgba(255, 255, 255, 0.2);
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 500;
+      }
+
+      .progress-details {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .progress-metric {
+        text-align: center;
+      }
+
+      .progress-metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        display: block;
+      }
+
+      .progress-metric-label {
+        font-size: 0.9rem;
+        opacity: 0.9;
+        margin-top: 4px;
+      }
+
+      .progress-bar-container {
+        margin-bottom: 16px;
+      }
+
+      .progress-bar-custom {
+        height: 8px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+
+      .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+        transition: width 0.3s ease;
+        border-radius: 4px;
+      }
+
+      .current-file {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-family: "Courier New", monospace;
+        font-size: 0.9rem;
+        word-break: break-all;
+      }
+
+      .current-file-icon {
+        color: #4facfe;
+        margin-right: 8px;
+      }
+
+      .progress-hidden {
+        display: none;
+      }
+
+      .file-stream {
+        max-height: 200px;
+        overflow-y: auto;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 16px;
+        font-family: "Courier New", monospace;
+        font-size: 0.8rem;
+      }
+
+      .file-entry {
+        padding: 2px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .file-entry:last-child {
+        border-bottom: none;
+      }
+
+      .file-entry-success {
+        color: #4ade80;
+      }
+      .file-entry-unchanged {
+        color: #94a3b8;
+      }
+      .file-entry-deleted {
+        color: #f87171;
+      }
+      .file-entry-error {
+        color: #ef4444;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container-fluid">
+      <div class="main-container">
+        <!-- ==================== HEADER ==================== -->
+        <header class="header-section">
+          <h2 class="mb-1">DC ↔ DR Transfer Dashboard</h2>
+          <p class="mb-0 text-muted">Backup Utility Management System</p>
+        </header>
+
+        <!-- ==================== REAL-TIME PROGRESS ==================== -->
+        <section id="progressSection" class="progress-section progress-hidden">
+          <div class="progress-header">
+            <h3 class="progress-title">
+              <i class="bi bi-activity current-file-icon"></i>
+              <span id="progressOperation">Transfer in Progress</span>
+            </h3>
+            <div id="progressStatus" class="progress-status">
+              Initializing...
+            </div>
+          </div>
+
+          <div class="progress-details">
+            <div class="progress-metric">
+              <span id="progressPercentage" class="progress-metric-value"
+                >0%</span
+              >
+              <div class="progress-metric-label">Complete</div>
+            </div>
+            <div class="progress-metric">
+              <span id="progressFiles" class="progress-metric-value">0/0</span>
+              <div class="progress-metric-label">Files</div>
+            </div>
+            <div class="progress-metric">
+              <span id="progressETA" class="progress-metric-value">--</span>
+              <div class="progress-metric-label">ETA</div>
+            </div>
+          </div>
+
+          <div class="progress-bar-container">
+            <div class="progress-bar-custom">
+              <div
+                id="progressBarFill"
+                class="progress-bar-fill"
+                style="width: 0%"
+              ></div>
+            </div>
+          </div>
+
+          <div class="current-file">
+            <i class="bi bi-file-earmark current-file-icon"></i>
+            <span id="currentFileName">Ready to start...</span>
+          </div>
+
+          <div id="fileStream" class="file-stream"></div>
+        </section>
+
+        <!-- ==================== CONTROLS ==================== -->
+        <section class="controls-section">
+          <!-- Transfer Mode Display -->
+          <div class="mb-3">
+            <div class="d-flex align-items-center gap-3">
+              <span class="fw-semibold">Transfer Mode:</span>
+              <span class="badge bg-primary">
+                <i class="bi bi-arrow-repeat"></i>
+                Incremental (Block-level with Snapshots)
+              </span>
+              <small class="text-muted">
+                Transfers only changed blocks for maximum efficiency
+              </small>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div
+            class="d-flex justify-content-between align-items-center flex-wrap"
+          >
+            <div class="btn-group-custom">
+              <div class="btn-group" role="group">
+                <button
+                  type="button"
+                  class="btn-clean btn-primary dropdown-toggle"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                >
+                  <i class="bi bi-arrow-right-circle"></i> Transfer DC → DR
+                </button>
+                <ul class="dropdown-menu">
+                  <li>
+                    <a
+                      class="dropdown-item"
+                      href="#"
+                      onclick="transferManager.start('DC', 'incremental')"
+                    >
+                      <i class="bi bi-arrow-repeat"></i> Incremental Backup
+                      <small class="text-muted d-block"
+                        >Only changed files (recommended)</small
+                      >
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      class="dropdown-item"
+                      href="#"
+                      onclick="transferManager.start('DC', 'full')"
+                    >
+                      <i class="bi bi-database-fill"></i> Full Backup
+                      <small class="text-muted d-block"
+                        >Complete data backup</small
+                      >
+                    </a>
+                  </li>
+                </ul>
+              </div>
+              <div class="btn-group" role="group">
+                <button
+                  type="button"
+                  class="btn-clean dropdown-toggle"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                >
+                  <i class="bi bi-arrow-left-circle"></i> Transfer DR → DC
+                </button>
+                <ul class="dropdown-menu">
+                  <li>
+                    <a
+                      class="dropdown-item"
+                      href="#"
+                      onclick="transferManager.start('DR', 'full')"
+                    >
+                      <i class="bi bi-database-fill"></i> Full Recovery
+                      <small class="text-muted d-block"
+                        >Complete data restoration (recommended)</small
+                      >
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      class="dropdown-item"
+                      href="#"
+                      onclick="transferManager.start('DR', 'incremental')"
+                    >
+                      <i class="bi bi-arrow-repeat"></i> Incremental Recovery
+                      <small class="text-muted d-block"
+                        >Only changed files</small
+                      >
+                    </a>
+                  </li>
+                </ul>
+              </div>
+              <button
+                id="checkSyncBtn"
+                class="btn-clean"
+                onclick="syncManager.checkStatus()"
+              >
+                <i class="bi bi-search"></i> Check Sync Status
+              </button>
+              <button class="btn-clean" onclick="window.location.reload()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+              </button>
+            </div>
+
+            <div class="status-indicator">
+              <div class="spinner" id="spinner" style="display: none"></div>
+              <span id="progressText">Idle</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== SYNC STATUS TABLE ==================== -->
+        <section class="table-section">
+          <h5 class="section-title">Quick Sync Status</h5>
+          <div class="quick-status">
+            <small
+              >Showing sample of files. Use "Check Sync Status" for complete
+              analysis.</small
+            >
+          </div>
+
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>File Path</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="syncTableBody">
+                <tr
+                  th:each="entry : ${syncStatus}"
+                  class="sync-row"
+                  th:classappend="${entry.value == 'MISSING_IN_DR' or entry.value == 'SIZE_MISMATCH' ? 'priority-high' :
+                                               (entry.value == 'EXTRA_IN_DR' ? 'priority-medium' :
+                                               (entry.key == '...' ? 'summary-row' : ''))}"
+                >
+                  <td>
+                    <code
+                      style="font-size: 0.85rem"
+                      th:text="${entry.key}"
+                    ></code>
+                  </td>
+                  <td>
+                    <span
+                      th:text="${entry.value}"
+                      th:classappend="${entry.value == 'SYNCED' ? 'status-badge badge-matched' :
+                                                         (entry.value == 'SIZE_MISMATCH' ? 'status-badge badge-mismatch' :
+                                                         (entry.value == 'MISSING_IN_DR' ? 'status-badge badge-missing' :
+                                                         (entry.value == 'EXTRA_IN_DR' ? 'status-badge badge-extra' :
+                                                         (entry.value == 'ERROR' ? 'status-badge badge-failed' :
+                                                         (entry.key == '...' ? '' : 'status-badge')))))}"
+                    ></span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ==================== TRANSFER LOGS ==================== -->
+        <section class="table-section">
+          <h5 class="section-title">Recent Transfer Logs</h5>
+
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>File Name</th>
+                  <th>Status</th>
+                  <th>Message</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="logTableBody">
+                <tr th:each="log : ${logs}" class="log-row">
+                  <td>
+                    <code
+                      style="font-size: 0.8rem"
+                      th:text="${log.fileName}"
+                    ></code>
+                  </td>
+                  <td>
+                    <span
+                      th:text="${log.status}"
+                      th:classappend="${log.status == 'SUCCESS' ? 'status-badge badge-success' :
+                                                         (log.status == 'FAILED' ? 'status-badge badge-failed' :
+                                                         (log.status == 'REMOVED' ? 'status-badge badge-removed' : 'status-badge'))}"
+                    ></span>
+                  </td>
+                  <td>
+                    <span
+                      th:text="${log.errorMessage ?: 'N/A'}"
+                      class="text-muted"
+                      style="font-size: 0.85rem"
+                    ></span>
+                  </td>
+                  <td>
+                    <small
+                      th:text="${#temporals.format(log.transferredAt, 'MM/dd HH:mm')}"
+                      class="text-muted"
+                    ></small>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ==================== EXTERNAL SCRIPTS ==================== -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- ==================== CUSTOM JAVASCRIPT ==================== -->
+    <script>
+      // ==================== APPLICATION STATE ==================== //
+      const AppState = {
+        pollInterval: null,
+        isTransferInProgress: false,
+      };
+
+      // ==================== WEBSOCKET CONNECTION ==================== //
+      let stompClient = null;
+      let isConnected = false;
+
+      function connectWebSocket() {
+        const socket = new SockJS("/ws");
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect(
+          {},
+          function (frame) {
+            console.log("Connected: " + frame);
+            isConnected = true;
+
+            // Subscribe to progress updates
+            stompClient.subscribe("/topic/progress", function (message) {
+              const progress = JSON.parse(message.body);
+              updateProgressUI(progress);
+            });
+          },
+          function (error) {
+            console.error("WebSocket connection error:", error);
+            isConnected = false;
+            // Try to reconnect after 5 seconds
+            setTimeout(connectWebSocket, 5000);
+          }
+        );
+      }
+
+      function updateProgressUI(progress) {
+        const progressSection = $("#progressSection");
+
+        if (progress.active) {
+          // Show progress section
+          progressSection.removeClass("progress-hidden");
+
+          // Update operation
+          $("#progressOperation").text(progress.operation);
+
+          // Update metrics
+          $("#progressPercentage").text(Math.round(progress.percentage) + "%");
+          $("#progressFiles").text(
+            progress.processedFiles + "/" + progress.totalFiles
+          );
+          $("#progressETA").text(progress.estimatedTimeRemaining);
+
+          // Update progress bar
+          $("#progressBarFill").css("width", progress.percentage + "%");
+
+          // Update current file
+          if (progress.currentFile) {
+            $("#currentFileName").text(progress.currentFile);
+
+            // Add to file stream
+            const fileStream = $("#fileStream");
+            const statusClass = getStatusClass(progress.status);
+            const entry = $(`<div class="file-entry ${statusClass}">
+                        <i class="bi ${getStatusIcon(progress.status)}"></i>
+                        ${progress.currentFile} - ${progress.status}
+                    </div>`);
+
+            fileStream.prepend(entry);
+
+            // Keep only last 20 entries
+            fileStream.children().slice(20).remove();
+          }
+
+          // Update status
+          if (
+            progress.processedFiles === progress.totalFiles &&
+            progress.totalFiles > 0
+          ) {
+            $("#progressStatus").text("Completing...");
+          } else {
+            $("#progressStatus").text("Processing...");
+          }
+        } else {
+          // Hide progress section after a delay
+          $("#progressStatus").text(progress.operation);
+          setTimeout(() => {
+            progressSection.addClass("progress-hidden");
+            $("#fileStream").empty();
+          }, 3000);
+        }
+      }
+
+      function getStatusClass(status) {
+        switch (status) {
+          case "Transferred":
+            return "file-entry-success";
+          case "Unchanged":
+            return "file-entry-unchanged";
+          case "Deleted":
+            return "file-entry-deleted";
+          default:
+            return "file-entry-error";
+        }
+      }
+
+      function getStatusIcon(status) {
+        switch (status) {
+          case "Transferred":
+            return "bi-check-circle";
+          case "Unchanged":
+            return "bi-dash-circle";
+          case "Deleted":
+            return "bi-x-circle";
+          default:
+            return "bi-exclamation-triangle";
+        }
+      }
+
+      // ==================== UI HELPERS ==================== //
+      const UIHelpers = {
+        getElements() {
+          return {
+            progressText: $("#progressText"),
+            spinner: $("#spinner"),
+            buttons: $(".btn-clean"),
+            checkBtn: $("#checkSyncBtn"),
+          };
+        },
+
+        showLoading(message = "Processing...") {
+          const { progressText, spinner, buttons } = this.getElements();
+          progressText.text(message);
+          spinner.show();
+          buttons.prop("disabled", true);
+        },
+
+        hideLoading(message = "Idle") {
+          const { progressText, spinner, buttons } = this.getElements();
+          progressText.text(message);
+          spinner.hide();
+          buttons.prop("disabled", false);
+        },
+
+        showAlert(content, type = "info", duration = 8000) {
+          const alertHtml = `<div class="alert alert-${type} mt-3">${content}</div>`;
+          $(".controls-section").after(alertHtml);
+
+          setTimeout(() => {
+            $(`.alert-${type}`).fadeOut();
+          }, duration);
+        },
+
+        showError(message) {
+          alert(`Error: ${message}`);
+          this.hideLoading("Error");
+        },
+      };
+
+      // ==================== TRANSFER MANAGER ==================== //
+      const transferManager = {
+        start(direction, mode = "incremental") {
+          if (AppState.isTransferInProgress) {
+            UIHelpers.showError("Transfer already in progress");
+            return;
+          }
+
+          // Convert direction to backend format
+          const backendDirection = direction === 'DC' ? 'DC_TO_DR' : 'DR_TO_DC';
+          
+          const modeText = mode === "full" ? "full" : "incremental";
+          UIHelpers.showLoading(`Starting ${modeText} transfer...`);
+          AppState.isTransferInProgress = true;
+
+          $.post("/api/incremental/transfer", {
+            direction: backendDirection,
+            mode: mode,
+          })
+            .done((response) => this.handleSuccess(response))
+            .fail((xhr) => this.handleError(xhr))
+            .always(() => {
+              AppState.isTransferInProgress = false;
+            });
+        },
+
+        handleSuccess(response) {
+          if (response && response.length > 0) {
+            // Count actual file results (exclude summary messages)
+            const fileResults = response.filter(
+              (msg) =>
+                msg.startsWith("✓") ||
+                msg.startsWith("○") ||
+                msg.startsWith("✗")
+            );
+            const fileCount = fileResults.length;
+
+            UIHelpers.hideLoading(
+              `Transfer completed: ${fileCount} file${
+                fileCount !== 1 ? "s" : ""
+              } processed`
+            );
+            this.displayResults(response);
+          } else {
+            UIHelpers.hideLoading("Transfer completed: No changes detected");
+          }
+
+          setTimeout(() => window.location.reload(), 3000);
+        },
+
+        handleError(xhr) {
+          UIHelpers.showError(`Failed to start transfer: ${xhr.responseText}`);
+        },
+
+        displayResults(results) {
+          let content =
+            '<h6>Incremental Transfer Results:</h6><ul class="mb-0">';
+          results.forEach((result) => {
+            content += `<li><small>${result}</small></li>`;
+          });
+          content += "</ul>";
+
+          UIHelpers.showAlert(content, "info", 10000);
+        },
+      };
+
+      // ==================== SYNC MANAGER ==================== //
+      const syncManager = {
+        checkStatus() {
+          const { checkBtn } = UIHelpers.getElements();
+
+          checkBtn.prop("disabled", true).text("Checking...");
+
+          $.get("/api/incremental/detailed-status")
+            .done((status) => this.displayStatus(status))
+            .fail(() => UIHelpers.showError("Status check failed"))
+            .always(() => {
+              checkBtn.prop("disabled", false).text("Check Sync Status");
+            });
+        },
+
+        displayStatus(status) {
+          if (status.error) {
+            UIHelpers.showError(`Status check failed: ${status.error}`);
+            return;
+          }
+
+          // Update the summary alert
+          const content = `
+                    <h6>Incremental Sync Status:</h6>
+                    <div class="row">
+                        <div class="col-md-3"><strong>Synced Files:</strong> ${
+                          status.synced_files || 0
+                        }</div>
+                        <div class="col-md-3"><strong>Out of Sync:</strong> ${
+                          status.out_of_sync_files || 0
+                        }</div>
+                        <div class="col-md-3"><strong>Total Snapshots:</strong> ${
+                          status.total_snapshots || 0
+                        }</div>
+                        <div class="col-md-3"><strong>Mode:</strong> ${
+                          status.mode || "Incremental"
+                        }</div>
+                    </div>
+                `;
+
+          // Remove any existing status alerts
+          $(".alert-success").remove();
+          UIHelpers.showAlert(content, "success", 8000);
+
+          // Update the sync status table
+          this.updateSyncTable(status.files || {});
+        },
+
+        updateSyncTable(files) {
+          const tableBody = $("#syncTableBody");
+          tableBody.empty();
+
+          if (Object.keys(files).length === 0) {
+            tableBody.append(`
+                        <tr class="sync-row">
+                            <td colspan="2" class="text-center text-muted">
+                                <em>No file information available</em>
+                            </td>
+                        </tr>
+                    `);
+            return;
+          }
+
+          // Add each file status
+          Object.entries(files).forEach(([filePath, status]) => {
+            const priorityClass = this.getPriorityClass(status);
+            const badgeClass = this.getBadgeClass(status);
+
+            tableBody.append(`
+                        <tr class="sync-row ${priorityClass}">
+                            <td>
+                                <code style="font-size: 0.85rem">${filePath}</code>
+                            </td>
+                            <td>
+                                <span class="status-badge ${badgeClass}">${status}</span>
+                            </td>
+                        </tr>
+                    `);
+          });
+        },
+
+        getPriorityClass(status) {
+          if (status === "MISSING_IN_DR" || status === "SIZE_MISMATCH") {
+            return "priority-high";
+          } else if (status === "EXTRA_IN_DR") {
+            return "priority-medium";
+          } else if (status === "...") {
+            return "summary-row";
+          }
+          return "";
+        },
+
+        getBadgeClass(status) {
+          switch (status) {
+            case "SYNCED":
+              return "badge-matched";
+            case "SIZE_MISMATCH":
+              return "badge-mismatch";
+            case "MISSING_IN_DR":
+              return "badge-missing";
+            case "EXTRA_IN_DR":
+              return "badge-extra";
+            case "ERROR":
+              return "badge-failed";
+            default:
+              return "";
+          }
+        },
+      };
+
+      // ==================== PROGRESS MONITOR ==================== //
+      const progressMonitor = {
+        start() {
+          if (AppState.pollInterval) {
+            clearInterval(AppState.pollInterval);
+          }
+
+          AppState.pollInterval = setInterval(() => {
+            $.get("/api/incremental/progress")
+              .done((data) => this.handleProgress(data))
+              .fail(() => this.handleError());
+          }, 3000);
+        },
+
+        stop() {
+          if (AppState.pollInterval) {
+            clearInterval(AppState.pollInterval);
+            AppState.pollInterval = null;
+          }
+        },
+
+        handleProgress(data) {
+          if (data.inProgress) {
+            UIHelpers.showLoading("Incremental transfer in progress...");
+          } else {
+            UIHelpers.hideLoading("Incremental transfer completed");
+            this.stop();
+            setTimeout(() => window.location.reload(), 2000);
+          }
+        },
+
+        handleError() {
+          this.stop();
+          UIHelpers.hideLoading("Status check failed");
+        },
+      };
+
+      // ==================== INITIALIZATION ==================== //
+      $(document).ready(function () {
+        // Initialize Bootstrap dropdowns
+        var dropdownElementList = [].slice.call(document.querySelectorAll('.dropdown-toggle'));
+        var dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
+          return new bootstrap.Dropdown(dropdownToggleEl);
+        });
+
+        // Connect to WebSocket first
+        connectWebSocket();
+
+        // Check if transfer is already in progress
+        $.get("/api/incremental/progress")
+          .done((data) => {
+            if (data.inProgress) {
+              progressMonitor.start();
+            }
+          })
+          .fail(() => {
+            // Progress endpoint might not exist yet, that's okay
+            console.log("Progress endpoint not available");
+          });
+      });
+    </script>
+  </body>
+</html>

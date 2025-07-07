@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+    <!-- Sync Status Table Fragment -->
+    <div th:fragment="syncTable" class="table-section">
+        <h5 class="section-title">Quick Sync Status</h5>
+        <div class="quick-status">
+            <strong>Note:</strong>
+            Showing sample of files. Use "Check Sync Status" for complete analysis.
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th scope="col">File Path</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Priority</th>
+                    </tr>
+                </thead>
+                <tbody id="syncTableBody">
+                    <tr
+                        th:each="entry : ${syncStatus}"
+                        class="sync-row"
+                    >
+                        <td>
+                            <code th:text="${entry.key}">file/path</code>
+                        </td>
+                        <td>
+                            <span
+                                class="status-badge"
+                                th:text="${entry.value}"
+                                th:classappend="${entry.value == 'SYNCED' ? 'status-badge badge-matched' :
+                                               entry.value == 'MISSING_IN_DR' ? 'status-badge badge-missing' :
+                                               entry.value == 'MISSING_IN_DC' ? 'status-badge badge-extra' :
+                                               'status-badge badge-mismatch'}"
+                            >
+                                STATUS
+                            </span>
+                        </td>
+                        <td>
+                            <small class="text-muted" th:text="${entry.value == 'SYNCED' ? 'Normal' : 'High'}">
+                                Normal
+                            </small>
+                        </td>
+                    </tr>
+                    <!-- Default message when no sync data -->
+                    <tr th:if="${#lists.isEmpty(syncStatus)}">
+                        <td colspan="3" class="text-center text-muted">
+                            <em>Click "Check Sync Status" to analyze file synchronization</em>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

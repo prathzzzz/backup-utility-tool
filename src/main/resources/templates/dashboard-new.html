@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/base}">
+
+<head>
+    <title layout:fragment="title">Dashboard</title>
+</head>
+
+<body>
+    <div layout:fragment="content">
+        <!-- Controls Section -->
+        <div th:replace="~{fragments/controls :: controls}"></div>
+
+        <!-- Sync Status Table Section -->
+        <div th:replace="~{fragments/syncTable :: syncTable}"></div>
+    </div>
+
+    <!-- Page specific scripts -->
+    <th:block layout:fragment="scripts">
+        <script>
+            // Initialize dashboard
+            $(document).ready(function() {
+                console.log("Dashboard initialized");
+            });
+        </script>
+    </th:block>
+</body>
+</html>
