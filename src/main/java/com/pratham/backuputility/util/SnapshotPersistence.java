@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.pratham.backuputility.model.FileSnapshot;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class SnapshotPersistence {
 
+    private static final Logger logger = LoggerFactory.getLogger(SnapshotPersistence.class);
+
     @Value("${app.snapshot-dir:${user.home}/.backup-utility/snapshots}")
     private String snapshotDir;
 
@@ -33,11 +38,27 @@ public class SnapshotPersistence {
     }
 
     /**
+     * Initialize the snapshot directory on startup
+     */
+    @PostConstruct
+    public void initialize() {
+        try {
+            Path snapshotPath = getSnapshotPath();
+            Files.createDirectories(snapshotPath);
+            logger.info("Snapshot directory initialized at: {}", snapshotPath.toAbsolutePath());
+        } catch (IOException e) {
+            logger.error("Failed to initialize snapshot directory", e);
+        }
+    }
+
+    /**
      * Save snapshots to disk
      */
     public void saveSnapshots(Map<String, FileSnapshot> snapshots) throws IOException {
         Path snapshotPath = getSnapshotPath();
-        Files.createDirectories(snapshotPath.getParent());
+        
+        // Ensure the directory exists
+        Files.createDirectories(snapshotPath);
 
         // Clean old snapshots first
         cleanOldSnapshots();
@@ -57,6 +78,10 @@ public class SnapshotPersistence {
     public Map<String, FileSnapshot> loadSnapshots() {
         try {
             Path snapshotPath = getSnapshotPath();
+            
+            // Ensure the directory exists
+            Files.createDirectories(snapshotPath);
+            
             Path snapshotFile = snapshotPath.resolve("snapshots.json");
 
             if (!Files.exists(snapshotFile)) {
@@ -64,7 +89,9 @@ public class SnapshotPersistence {
                 Path backupFile = snapshotPath.resolve("snapshots.backup.json");
                 if (Files.exists(backupFile)) {
                     snapshotFile = backupFile;
+                    logger.info("Loading snapshots from backup file");
                 } else {
+                    logger.info("No existing snapshots found, starting with empty snapshot store");
                     return new ConcurrentHashMap<>();
                 }
             }
@@ -73,10 +100,12 @@ public class SnapshotPersistence {
             Map<String, FileSnapshot> snapshots = objectMapper.readValue(snapshotFile.toFile(), typeRef);
 
             // Clean expired snapshots
-            return cleanExpiredSnapshots(snapshots);
+            Map<String, FileSnapshot> cleanedSnapshots = cleanExpiredSnapshots(snapshots);
+            logger.info("Loaded {} snapshots from disk", cleanedSnapshots.size());
+            return cleanedSnapshots;
 
         } catch (IOException e) {
-            System.err.println("Failed to load snapshots: " + e.getMessage());
+            logger.error("Failed to load snapshots: {}", e.getMessage(), e);
             return new ConcurrentHashMap<>();
         }
     }
@@ -87,7 +116,10 @@ public class SnapshotPersistence {
     private void cleanOldSnapshots() {
         try {
             Path snapshotPath = getSnapshotPath();
+            
+            // Ensure directory exists before trying to clean it
             if (!Files.exists(snapshotPath)) {
+                Files.createDirectories(snapshotPath);
                 return;
             }
 
@@ -109,13 +141,14 @@ public class SnapshotPersistence {
                 .forEach(file -> {
                     try {
                         Files.deleteIfExists(file);
+                        logger.debug("Deleted old snapshot file: {}", file.getFileName());
                     } catch (IOException e) {
-                        System.err.println("Failed to delete old snapshot: " + file);
+                        logger.warn("Failed to delete old snapshot: {}", file, e);
                     }
                 });
 
         } catch (IOException e) {
-            System.err.println("Failed to clean old snapshots: " + e.getMessage());
+            logger.error("Failed to clean old snapshots: {}", e.getMessage(), e);
         }
     }
 

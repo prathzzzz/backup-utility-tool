@@ -99,7 +99,7 @@ public class FileDetectionService {
     }
 
     /**
-     * Check if a file needs to be transferred based on basic file attributes
+     * Check if a file needs to be transferred based on fast content comparison
      */
     private boolean needsTransfer(Path sourceFile, Path targetFile) {
         try {
@@ -107,20 +107,10 @@ public class FileDetectionService {
                 return true;
             }
 
-            // Quick checks: size and modification time
-            long sourceSize = Files.size(sourceFile);
-            long targetSize = Files.size(targetFile);
+            // Use fast sample-based comparison
+            return com.pratham.backuputility.util.FileSystemUtil.areFilesDifferent(sourceFile, targetFile);
 
-            if (sourceSize != targetSize) {
-                return true;
-            }
-
-            long sourceLastModified = Files.getLastModifiedTime(sourceFile).toMillis();
-            long targetLastModified = Files.getLastModifiedTime(targetFile).toMillis();
-
-            return sourceLastModified != targetLastModified;
-
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.warn("Error comparing files {} and {}: {}", sourceFile, targetFile, e.getMessage());
             return true; // Assume transfer needed if we can't compare
         }

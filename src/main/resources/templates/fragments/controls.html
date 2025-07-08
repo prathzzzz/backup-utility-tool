@@ -48,43 +48,13 @@
             </div>
 
             <!-- DR to DC Transfer Options -->
-            <div class="btn-group">
-                <button
-                    type="button"
-                    class="btn btn-clean dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                >
-                    <i class="bi bi-arrow-left"></i> DR → DC Transfer
-                </button>
-                <ul class="dropdown-menu">
-                    <li>
-                        <a
-                            class="dropdown-item"
-                            href="#"
-                            onclick="transferManager.start('DR', 'full')"
-                        >
-                            <strong>Full Transfer</strong>
-                            <br />
-                            <small class="text-muted">Transfer all files from DR to DC</small>
-                        </a>
-                    </li>
-                    <li>
-                        <hr class="dropdown-divider" />
-                    </li>
-                    <li>
-                        <a
-                            class="dropdown-item"
-                            href="#"
-                            onclick="transferManager.start('DR', 'incremental')"
-                        >
-                            <strong>Incremental Sync</strong>
-                            <br />
-                            <small class="text-muted">Transfer only changed files</small>
-                        </a>
-                    </li>
-                </ul>
-            </div>
+            <button
+                type="button"
+                class="btn btn-clean"
+                onclick="transferManager.start('DR', 'full')"
+            >
+                <i class="bi bi-arrow-left"></i> DR → DC Full Transfer
+            </button>
 
             <!-- Sync Status Check -->
             <button

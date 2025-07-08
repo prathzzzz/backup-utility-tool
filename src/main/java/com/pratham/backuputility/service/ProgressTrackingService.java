@@ -21,6 +21,7 @@ public class ProgressTrackingService {
     private volatile String currentFile = "";
     private volatile String currentOperation = "Idle";
     private volatile LocalDateTime startTime;
+    private volatile LocalDateTime endTime;
     private volatile boolean isActive = false;
 
     public void startProgress(int totalFileCount, long totalByteCount, String operation) {
@@ -30,6 +31,7 @@ public class ProgressTrackingService {
         this.processedBytes.set(0);
         this.currentOperation = operation;
         this.startTime = LocalDateTime.now();
+        this.endTime = null; // Reset endTime when starting a new operation
         this.isActive = true;
         sendProgressUpdate();
     }
@@ -49,13 +51,16 @@ public class ProgressTrackingService {
         update.setOperation(currentOperation);
         update.setActive(isActive);
         update.setStartTime(startTime);
+        update.setEndTime(endTime);
         update.setPercentage(calculatePercentage());
         update.setEstimatedTimeRemaining(calculateETA());
+        update.setElapsedTime(calculateElapsedTime());
 
         messagingTemplate.convertAndSend("/topic/progress", update);
     }
 
     public void finishProgress(String finalMessage) {
+        this.endTime = LocalDateTime.now();
         this.isActive = false;
         this.currentOperation = finalMessage;
         this.currentFile = "";
@@ -63,6 +68,7 @@ public class ProgressTrackingService {
     }
 
     public void sendError(String errorMessage) {
+        this.endTime = LocalDateTime.now();
         this.isActive = false;
         this.currentOperation = "Error: " + errorMessage;
         sendProgressUpdate();
@@ -78,8 +84,10 @@ public class ProgressTrackingService {
         update.setOperation(currentOperation);
         update.setActive(isActive);
         update.setStartTime(startTime);
+        update.setEndTime(endTime);
         update.setPercentage(calculatePercentage());
         update.setEstimatedTimeRemaining(calculateETA());
+        update.setElapsedTime(calculateElapsedTime());
 
         messagingTemplate.convertAndSend("/topic/progress", update);
     }
@@ -111,6 +119,23 @@ public class ProgressTrackingService {
         }
     }
 
+    private String calculateElapsedTime() {
+        if (startTime == null) {
+            return "0s";
+        }
+
+        LocalDateTime endTimeToUse = endTime != null ? endTime : LocalDateTime.now();
+        long elapsedSeconds = java.time.Duration.between(startTime, endTimeToUse).getSeconds();
+
+        if (elapsedSeconds < 60) {
+            return elapsedSeconds + "s";
+        } else if (elapsedSeconds < 3600) {
+            return (elapsedSeconds / 60) + "m " + (elapsedSeconds % 60) + "s";
+        } else {
+            return (elapsedSeconds / 3600) + "h " + ((elapsedSeconds % 3600) / 60) + "m";
+        }
+    }
+
     public static class ProgressUpdate {
         private String currentFile;
         private String status;
@@ -121,8 +146,10 @@ public class ProgressTrackingService {
         private String operation;
         private boolean active;
         private LocalDateTime startTime;
+        private LocalDateTime endTime;
         private double percentage;
         private String estimatedTimeRemaining;
+        private String elapsedTime;
 
         // Getters and setters
         public String getCurrentFile() { return currentFile; }
@@ -143,9 +170,13 @@ public class ProgressTrackingService {
         public void setActive(boolean active) { this.active = active; }
         public LocalDateTime getStartTime() { return startTime; }
         public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
+        public LocalDateTime getEndTime() { return endTime; }
+        public void setEndTime(LocalDateTime endTime) { this.endTime = endTime; }
         public double getPercentage() { return percentage; }
         public void setPercentage(double percentage) { this.percentage = percentage; }
         public String getEstimatedTimeRemaining() { return estimatedTimeRemaining; }
         public void setEstimatedTimeRemaining(String estimatedTimeRemaining) { this.estimatedTimeRemaining = estimatedTimeRemaining; }
+        public String getElapsedTime() { return elapsedTime; }
+        public void setElapsedTime(String elapsedTime) { this.elapsedTime = elapsedTime; }
     }
 }

@@ -9,13 +9,32 @@
         </div>
 
         <div class="progress-metrics" id="progressMetrics">
-            <!-- Metrics will be populated by JavaScript -->
+            <div class="metric-card">
+                <div class="metric-value" id="progressPercentage">0%</div>
+                <div class="metric-label">Complete</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="progressFiles">0/0</div>
+                <div class="metric-label">Files</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="progressElapsed">0s</div>
+                <div class="metric-label">Elapsed</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="progressETA">Calculating...</div>
+                <div class="metric-label">ETA</div>
+            </div>
         </div>
 
         <div class="progress-bar-container">
             <div class="progress-bar" id="progressBar" style="width: 0%"></div>
         </div>
         <div class="progress-text" id="progressText">0% Complete</div>
+        
+        <div class="current-file" id="currentFile" style="margin-top: 10px; font-size: 0.9em; color: #666;">
+            <!-- Current file being processed will be shown here -->
+        </div>
     </div>
 </body>
 </html>

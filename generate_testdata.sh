@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Base directory where to create the structure
-BASE_DIR="./dc-data"
+BASE_DIR="dc-data"
 
 # Number of top-level folders
 TOP_LEVEL=5

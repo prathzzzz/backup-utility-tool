@@ -5,6 +5,7 @@ const AppState = {
   isTransferInProgress: false,
   autoRefreshEnabled: true,
   wsConnection: null,
+  stompClient: null,
   lastUpdated: new Date()
 };
 
@@ -146,6 +147,89 @@ const AutoRefresh = {
   }
 };
 
+// WebSocket Management
+const WebSocketManager = {
+  connect() {
+    try {
+      const socket = new SockJS('/ws');
+      AppState.stompClient = Stomp.over(socket);
+      
+      AppState.stompClient.connect({}, 
+        (frame) => {
+          console.log('WebSocket connected: ' + frame);
+          UIHelpers.updateConnectionStatus(true);
+          
+          // Subscribe to progress updates
+          AppState.stompClient.subscribe('/topic/progress', (message) => {
+            const progress = JSON.parse(message.body);
+            this.handleProgressUpdate(progress);
+          });
+        },
+        (error) => {
+          console.error('WebSocket connection failed:', error);
+          UIHelpers.updateConnectionStatus(false);
+          // Try to reconnect after 5 seconds
+          setTimeout(() => this.connect(), 5000);
+        }
+      );
+    } catch (error) {
+      console.error('Failed to initialize WebSocket:', error);
+      UIHelpers.updateConnectionStatus(false);
+    }
+  },
+
+  disconnect() {
+    if (AppState.stompClient && AppState.stompClient.connected) {
+      AppState.stompClient.disconnect();
+    }
+  },
+
+  handleProgressUpdate(progress) {
+    const progressSection = $("#progressSection");
+    
+    if (progress.active) {
+      // Show progress section
+      progressSection.show();
+      AppState.isTransferInProgress = true;
+      
+      // Update progress bar
+      const percentage = Math.round(progress.percentage);
+      $("#progressBar").css("width", percentage + "%");
+      $("#progressText").text(percentage + "% Complete");
+      
+      // Update metrics
+      $("#progressPercentage").text(percentage + "%");
+      $("#progressFiles").text(progress.processedFiles + "/" + progress.totalFiles);
+      $("#progressElapsed").text(progress.elapsedTime || "0s");
+      $("#progressETA").text(progress.estimatedTimeRemaining || "Calculating...");
+      
+      // Update status and current file
+      $("#progressStatus").text(progress.operation || "Processing...");
+      if (progress.currentFile) {
+        $("#currentFile").html(`<i class="bi bi-file-earmark"></i> ${progress.currentFile}`);
+      }
+      
+    } else {
+      // Transfer completed
+      AppState.isTransferInProgress = false;
+      
+      // Show completion info
+      if (progress.elapsedTime) {
+        const completionMessage = `${progress.operation} - Total time: ${progress.elapsedTime}`;
+        $("#progressStatus").text(completionMessage);
+        UIHelpers.showSuccess(completionMessage);
+      }
+      
+      // Hide progress section after a delay
+      setTimeout(() => {
+        progressSection.hide();
+        // Reload page to refresh data
+        window.location.reload();
+      }, 3000);
+    }
+  }
+};
+
 // Initialize on document ready
 $(document).ready(function() {
   // Initialize Bootstrap dropdowns
@@ -153,6 +237,9 @@ $(document).ready(function() {
   var dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
     return new bootstrap.Dropdown(dropdownToggleEl);
   });
+
+  // Initialize WebSocket connection
+  WebSocketManager.connect();
 
   // Initialize auto-refresh
   AutoRefresh.start();
@@ -183,5 +270,14 @@ document.addEventListener("visibilitychange", function() {
     if (AppState.autoRefreshEnabled) {
       AutoRefresh.start();
     }
+    // Reconnect WebSocket if needed
+    if (!AppState.stompClient || !AppState.stompClient.connected) {
+      WebSocketManager.connect();
+    }
   }
+});
+
+// Handle page unload
+window.addEventListener("beforeunload", function() {
+  WebSocketManager.disconnect();
 });

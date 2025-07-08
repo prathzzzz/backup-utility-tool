@@ -108,35 +108,36 @@ public class TransferService {
             Path sourceBase = Paths.get(operation.getSourcePathStr());
             Path targetBase = Paths.get(operation.getTargetPathStr());
 
-            logger.info("Starting {}: {} -> {}", operation.getOperationDescription(), sourceBase, targetBase);
-            results.add("Mode: " + operation.getOperationDescription());
+            // Load existing snapshots
+            loadSnapshots();
 
-            // Detect files to process
-            List<Path> filesToProcess = detectFilesToProcess(sourceBase, targetBase, operation);
-            List<Path> filesToDelete = fileDetectionService.detectDeletedFiles(sourceBase, targetBase);
-
-            if (filesToProcess.isEmpty() && filesToDelete.isEmpty()) {
-                results.add("No files have changed since last sync");
-                return results;
+            // CRITICAL FIX: For full sync, clean up snapshot cache to prevent contamination
+            if (operation.isFullMode()) {
+                cleanupSnapshotCacheForFullSync(sourceBase, operation.getDirection().toString());
             }
 
-            int totalFiles = filesToProcess.size() + filesToDelete.size();
-            long totalBytes = FileSystemUtil.calculateTotalBytes(filesToProcess);
-
-            logger.info("Found {} files to process ({} changes, {} deletions)",
-                totalFiles, filesToProcess.size(), filesToDelete.size());
-            results.add(String.format("Found %d files to process", totalFiles));
-
+            // Detect files to process
+            List<Path> files = detectFilesToProcess(sourceBase, targetBase, operation);
+            
+            // Calculate total bytes for progress tracking
+            long totalBytes = FileSystemUtil.calculateTotalBytes(files);
+            
             // Start progress tracking
-            progressTrackingService.startProgress(totalFiles, totalBytes, operation.getOperationDescription());
+            progressTrackingService.startProgress(files.size(), totalBytes, operation.getDirection().toString());
 
-            // Process file transfers
-            processFileTransfers(filesToProcess, sourceBase, targetBase, operation, results);
+            logger.info("Starting {} transfer: {} files, {} bytes", 
+                operation.isFullMode() ? "full" : "incremental", files.size(), totalBytes);
 
-            // Process file deletions
-            processFileDeletions(filesToDelete, targetBase, results);
+            // Process transfers
+            processFileTransfers(files, sourceBase, targetBase, operation, results);
 
-            // Save snapshots
+            // Handle deletions for full mode
+            if (operation.isFullMode()) {
+                List<Path> filesToDelete = detectFilesToDelete(sourceBase, targetBase, operation);
+                processFileDeletions(filesToDelete, targetBase, results);
+            }
+
+            // Save snapshots to disk
             saveSnapshots();
 
             // Complete progress tracking
@@ -153,6 +154,43 @@ public class TransferService {
     }
 
     /**
+     * Clean up snapshot cache for full sync to prevent contamination from previous sync operations
+     */
+    private void cleanupSnapshotCacheForFullSync(Path sourceBase, String direction) {
+        try {
+            logger.info("Cleaning up snapshot cache for full sync in direction: {}", direction);
+            
+            // Get all current files in the source directory
+            List<Path> currentSourceFiles = FileSystemUtil.getAllFiles(sourceBase);
+            Set<String> currentSourcePaths = new HashSet<>();
+            
+            for (Path sourceFile : currentSourceFiles) {
+                String relativePath = sourceBase.relativize(sourceFile).toString();
+                currentSourcePaths.add(relativePath);
+            }
+            
+            // Remove snapshot entries that don't exist in current source
+            Set<String> toRemove = new HashSet<>();
+            for (String cachedPath : snapshotCache.keySet()) {
+                if (!currentSourcePaths.contains(cachedPath)) {
+                    toRemove.add(cachedPath);
+                }
+            }
+            
+            for (String pathToRemove : toRemove) {
+                snapshotCache.remove(pathToRemove);
+                logger.debug("Removed stale snapshot cache entry: {}", pathToRemove);
+            }
+            
+            logger.info("Cleaned up {} stale snapshot entries for full sync", toRemove.size());
+            
+        } catch (Exception e) {
+            logger.error("Failed to cleanup snapshot cache for full sync", e);
+            // Don't fail the operation, just log the error
+        }
+    }
+
+    /**
      * Detect files to process based on transfer mode
      */
     private List<Path> detectFilesToProcess(Path sourceBase, Path targetBase, TransferOperation operation) {
@@ -161,6 +199,42 @@ public class TransferService {
         } else {
             return fileDetectionService.detectChangedFiles(sourceBase, targetBase);
         }
+    }
+
+    /**
+     * Detect files that need to be deleted from target (for full sync)
+     */
+    private List<Path> detectFilesToDelete(Path sourceBase, Path targetBase, TransferOperation operation) {
+        List<Path> filesToDelete = new ArrayList<>();
+        
+        try {
+            // Get all files in target directory
+            List<Path> targetFiles = FileSystemUtil.getAllFiles(targetBase);
+            
+            // Get all files in source directory
+            List<Path> sourceFiles = FileSystemUtil.getAllFiles(sourceBase);
+            Set<String> sourceRelativePaths = new HashSet<>();
+            
+            for (Path sourceFile : sourceFiles) {
+                String relativePath = sourceBase.relativize(sourceFile).toString();
+                sourceRelativePaths.add(relativePath);
+            }
+            
+            // Find target files that don't exist in source
+            for (Path targetFile : targetFiles) {
+                String relativePath = targetBase.relativize(targetFile).toString();
+                if (!sourceRelativePaths.contains(relativePath)) {
+                    filesToDelete.add(targetFile);
+                }
+            }
+            
+            logger.info("Found {} files to delete from target for full sync", filesToDelete.size());
+            
+        } catch (Exception e) {
+            logger.error("Failed to detect files to delete", e);
+        }
+        
+        return filesToDelete;
     }
 
     /**
@@ -238,25 +312,24 @@ public class TransferService {
         for (Path targetFile : filesToDelete) {
             try {
                 String relativePath = targetBase.relativize(targetFile).toString();
-
-                Files.delete(targetFile);
-
-                // Remove from snapshot cache
-                snapshotCache.remove(relativePath);
-
-                // Log deletion
-                transferLogService.logFileDeletion(relativePath);
-
-                // Update progress
-                progressTrackingService.updateFileProgress(relativePath, "Deleted", 0);
-
-                results.add(String.format("✗ %s (deleted)", relativePath));
-
+                
+                if (Files.exists(targetFile)) {
+                    Files.delete(targetFile);
+                    results.add(String.format("✗ Deleted: %s", relativePath));
+                    logger.info("Deleted file: {}", relativePath);
+                    
+                    // Remove from snapshot cache
+                    snapshotCache.remove(relativePath);
+                    
+                    // Log the deletion
+                    transferLogService.logTransferError(relativePath, "File deleted during full sync");
+                }
+                
             } catch (Exception e) {
-                String error = String.format("✗ ERROR deleting %s - %s",
+                String error = String.format("✗ ERROR deleting %s: %s", 
                     targetBase.relativize(targetFile), e.getMessage());
                 results.add(error);
-                logger.error("Error deleting file: {}", targetFile, e);
+                logger.error("Failed to delete file: {}", targetFile, e);
             }
         }
     }
@@ -297,27 +370,87 @@ public class TransferService {
             Path dcBase = Paths.get(dcPath);
             Path drBase = Paths.get(drPath);
 
+            logger.info("DC Path: {}", dcBase.toAbsolutePath());
+            logger.info("DR Path: {}", drBase.toAbsolutePath());
+
             if (!FileSystemUtil.isDirectory(dcBase) || !FileSystemUtil.isDirectory(drBase)) {
                 status.put("error", "One or both directories do not exist");
                 return status;
             }
 
-            // Get changed files
-            List<Path> dcChangedFiles = fileDetectionService.detectChangedFiles(dcBase, drBase);
-            List<Path> drChangedFiles = fileDetectionService.detectChangedFiles(drBase, dcBase);
-            List<Path> dcDeletedFiles = fileDetectionService.detectDeletedFiles(dcBase, drBase);
-            List<Path> drDeletedFiles = fileDetectionService.detectDeletedFiles(drBase, dcBase);
+            // Get all files from both directories
+            List<Path> dcFiles = FileSystemUtil.getAllFiles(dcBase);
+            List<Path> drFiles = FileSystemUtil.getAllFiles(drBase);
 
-            // Calculate unique files that need syncing
-            Set<String> allChangedPaths = new HashSet<>();
-            dcChangedFiles.forEach(f -> allChangedPaths.add(dcBase.relativize(f).toString()));
-            drChangedFiles.forEach(f -> allChangedPaths.add(drBase.relativize(f).toString()));
-            dcDeletedFiles.forEach(f -> allChangedPaths.add(drBase.relativize(f).toString()));
-            drDeletedFiles.forEach(f -> allChangedPaths.add(dcBase.relativize(f).toString()));
+            logger.info("Found {} files in DC and {} files in DR", dcFiles.size(), drFiles.size());
 
-            int outOfSyncCount = allChangedPaths.size();
-            int totalUniqueFiles = FileSystemUtil.countUniqueFiles(dcBase, drBase);
+            // Create sets of relative paths for comparison
+            Set<String> dcRelativePaths = new HashSet<>();
+            Set<String> drRelativePaths = new HashSet<>();
+            
+            for (Path dcFile : dcFiles) {
+                dcRelativePaths.add(dcBase.relativize(dcFile).toString());
+            }
+            
+            for (Path drFile : drFiles) {
+                drRelativePaths.add(drBase.relativize(drFile).toString());
+            }
+
+            // Find files that need synchronization
+            Set<String> outOfSyncFiles = new HashSet<>();
+            
+            logger.info("DC has {} files, DR has {} files", dcFiles.size(), drFiles.size());
+            
+            // Check DC files that are missing in DR or different
+            for (Path dcFile : dcFiles) {
+                String relativePath = dcBase.relativize(dcFile).toString();
+                Path correspondingDrFile = drBase.resolve(relativePath);
+                
+                boolean needsSync = false;
+                String reason = "";
+                
+                if (!Files.exists(correspondingDrFile)) {
+                    needsSync = true;
+                    reason = "missing in DR";
+                } else if (needsTransfer(dcFile, correspondingDrFile)) {
+                    needsSync = true;
+                    reason = "content different";
+                }
+                
+                if (needsSync) {
+                    outOfSyncFiles.add(relativePath);
+                    logger.info("File {} needs sync: {}", relativePath, reason);
+                }
+            }
+            
+            logger.info("Found {} DC files that need sync", outOfSyncFiles.size());
+            
+            // Check DR files that are missing in DC
+            int drOnlyFiles = 0;
+            for (Path drFile : drFiles) {
+                String relativePath = drBase.relativize(drFile).toString();
+                Path correspondingDcFile = dcBase.resolve(relativePath);
+                
+                if (!Files.exists(correspondingDcFile)) {
+                    outOfSyncFiles.add(relativePath);
+                    drOnlyFiles++;
+                    logger.info("File {} exists in DR but not in DC", relativePath);
+                }
+            }
+            
+            logger.info("Found {} DR-only files", drOnlyFiles);
+
+            // Calculate totals
+            Set<String> allUniqueFiles = new HashSet<>();
+            allUniqueFiles.addAll(dcRelativePaths);
+            allUniqueFiles.addAll(drRelativePaths);
+            
+            int totalUniqueFiles = allUniqueFiles.size();
+            int outOfSyncCount = outOfSyncFiles.size();
             int syncedFiles = Math.max(0, totalUniqueFiles - outOfSyncCount);
+
+            logger.info("Sync status: {} total files, {} out of sync, {} synced", 
+                totalUniqueFiles, outOfSyncCount, syncedFiles);
 
             status.put("synced_files", String.valueOf(syncedFiles));
             status.put("out_of_sync_files", String.valueOf(outOfSyncCount));
@@ -330,6 +463,33 @@ public class TransferService {
         }
 
         return status;
+    }
+
+    /**
+     * Helper method to check if a file needs transfer (fast sample-based comparison)
+     */
+    private boolean needsTransfer(Path sourceFile, Path targetFile) {
+        try {
+            if (!Files.exists(targetFile)) {
+                logger.debug("File {} needs transfer: target doesn't exist", sourceFile.getFileName());
+                return true;
+            }
+
+            // Use fast sample-based comparison
+            boolean different = FileSystemUtil.areFilesDifferent(sourceFile, targetFile);
+            
+            if (different) {
+                logger.debug("File {} needs transfer: content different", sourceFile.getFileName());
+            } else {
+                logger.debug("File {} is identical", sourceFile.getFileName());
+            }
+            
+            return different;
+
+        } catch (Exception e) {
+            logger.warn("Error comparing files {} and {}: {}", sourceFile, targetFile, e.getMessage());
+            return true; // Assume transfer needed if we can't compare
+        }
     }
 
     /**

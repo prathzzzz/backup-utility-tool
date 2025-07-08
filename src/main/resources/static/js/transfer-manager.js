@@ -13,18 +13,25 @@ const transferManager = {
     UIHelpers.showLoading(`Starting ${modeText} transfer...`);
     AppState.isTransferInProgress = true;
 
+    // Show progress section immediately
+    $("#progressSection").show();
+    $("#progressStatus").text(`Starting ${modeText} transfer...`);
+    $("#progressBar").css("width", "0%");
+    $("#progressText").text("0% Complete");
+
     $.post("/api/incremental/transfer", {
       direction: backendDirection,
       mode: mode,
     })
-      .done((response) => this.handleSuccess(response))
+      .done((response) => this.handleSuccess(response, modeText))
       .fail((xhr) => this.handleError(xhr))
       .always(() => {
-        AppState.isTransferInProgress = false;
+        // Don't set to false immediately, let WebSocket handle it
+        // AppState.isTransferInProgress = false;
       });
   },
 
-  handleSuccess(response) {
+  handleSuccess(response, modeText) {
     if (response && response.length > 0) {
       // Count actual file results (exclude summary messages)
       const fileResults = response.filter(
@@ -35,26 +42,21 @@ const transferManager = {
       );
       const fileCount = fileResults.length;
 
-      UIHelpers.hideLoading(
-        `Transfer completed: ${fileCount} file${
-          fileCount !== 1 ? "s" : ""
-        } processed`
-      );
+      console.log(`${modeText} transfer completed: ${fileCount} file${fileCount !== 1 ? "s" : ""} processed`);
       this.displayResults(response);
     } else {
-      UIHelpers.hideLoading("Transfer completed: No changes detected");
+      console.log(`${modeText} transfer completed: No changes detected`);
     }
-
-    setTimeout(() => window.location.reload(), 3000);
   },
 
   handleError(xhr) {
+    AppState.isTransferInProgress = false;
+    $("#progressSection").hide();
     UIHelpers.showError(`Failed to start transfer: ${xhr.responseText}`);
   },
 
   displayResults(results) {
-    let content =
-      '<h6>Transfer Results:</h6><ul class="mb-0">';
+    let content = '<h6>Transfer Results:</h6><ul class="mb-0">';
     results.forEach((result) => {
       content += `<li><small>${result}</small></li>`;
     });
