@@ -73,4 +73,18 @@ public class IncrementalTransferController {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
+
+    /**
+     * Clear old snapshots for debugging
+     */
+    @PostMapping("/clear-cache")
+    @ResponseBody
+    public ResponseEntity<String> clearSnapshotCache() {
+        try {
+            transferService.clearOldSnapshots();
+            return ResponseEntity.ok("Old snapshots cleared successfully");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to clear snapshots: " + e.getMessage());
+        }
+    }
 }

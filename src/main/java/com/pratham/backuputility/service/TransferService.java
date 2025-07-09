@@ -1,8 +1,8 @@
 package com.pratham.backuputility.service;
 
+import com.pratham.backuputility.entity.FileSnapshotEntity;
 import com.pratham.backuputility.model.*;
 import com.pratham.backuputility.util.FileSystemUtil;
-import com.pratham.backuputility.util.SnapshotPersistence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -34,7 +33,7 @@ public class TransferService {
 
     // Service dependencies
     @Autowired
-    private SnapshotService snapshotService;
+    private SQLiteSnapshotService sqliteSnapshotService;
 
     @Autowired
     private FileDetectionService fileDetectionService;
@@ -51,19 +50,14 @@ public class TransferService {
     @Autowired
     private TransferLogService transferLogService;
 
-    @Autowired
-    private SnapshotPersistence snapshotPersistence;
-
     // State management
     private final AtomicBoolean transferInProgress = new AtomicBoolean(false);
-    private final Map<String, FileSnapshot> snapshotCache = new ConcurrentHashMap<>();
 
     /**
      * Initialize the service
      */
     public void initialize() {
         try {
-            loadSnapshots();
             logger.info("TransferService initialized successfully");
         } catch (Exception e) {
             logger.error("Failed to initialize TransferService", e);
@@ -108,12 +102,9 @@ public class TransferService {
             Path sourceBase = Paths.get(operation.getSourcePathStr());
             Path targetBase = Paths.get(operation.getTargetPathStr());
 
-            // Load existing snapshots
-            loadSnapshots();
-
-            // CRITICAL FIX: For full sync, clean up snapshot cache to prevent contamination
+            // CRITICAL FIX: For full sync, clean up old snapshots to prevent contamination
             if (operation.isFullMode()) {
-                cleanupSnapshotCacheForFullSync(sourceBase, operation.getDirection().toString());
+                cleanupOldSnapshotsForFullSync(sourceBase, operation.getDirection().toString());
             }
 
             // Detect files to process
@@ -137,9 +128,6 @@ public class TransferService {
                 processFileDeletions(filesToDelete, targetBase, results);
             }
 
-            // Save snapshots to disk
-            saveSnapshots();
-
             // Complete progress tracking
             progressTrackingService.finishProgress("Transfer completed successfully");
             logger.info("Transfer completed successfully");
@@ -154,38 +142,19 @@ public class TransferService {
     }
 
     /**
-     * Clean up snapshot cache for full sync to prevent contamination from previous sync operations
+     * Clean up old snapshots for full sync to prevent contamination from previous sync operations
      */
-    private void cleanupSnapshotCacheForFullSync(Path sourceBase, String direction) {
+    private void cleanupOldSnapshotsForFullSync(Path sourceBase, String direction) {
         try {
-            logger.info("Cleaning up snapshot cache for full sync in direction: {}", direction);
+            logger.info("Cleaning up old snapshots for full sync in direction: {}", direction);
             
-            // Get all current files in the source directory
-            List<Path> currentSourceFiles = FileSystemUtil.getAllFiles(sourceBase);
-            Set<String> currentSourcePaths = new HashSet<>();
+            // Use SQLite service to clean up old snapshots
+            sqliteSnapshotService.cleanupOldSnapshots();
             
-            for (Path sourceFile : currentSourceFiles) {
-                String relativePath = sourceBase.relativize(sourceFile).toString();
-                currentSourcePaths.add(relativePath);
-            }
-            
-            // Remove snapshot entries that don't exist in current source
-            Set<String> toRemove = new HashSet<>();
-            for (String cachedPath : snapshotCache.keySet()) {
-                if (!currentSourcePaths.contains(cachedPath)) {
-                    toRemove.add(cachedPath);
-                }
-            }
-            
-            for (String pathToRemove : toRemove) {
-                snapshotCache.remove(pathToRemove);
-                logger.debug("Removed stale snapshot cache entry: {}", pathToRemove);
-            }
-            
-            logger.info("Cleaned up {} stale snapshot entries for full sync", toRemove.size());
+            logger.info("Cleaned up old snapshots for full sync");
             
         } catch (Exception e) {
-            logger.error("Failed to cleanup snapshot cache for full sync", e);
+            logger.error("Failed to cleanup old snapshots for full sync", e);
             // Don't fail the operation, just log the error
         }
     }
@@ -277,24 +246,37 @@ public class TransferService {
     /**
      * Process a single file transfer
      */
+    /**
+     * Process a single file transfer
+     */
     private String processFile(Path sourceFile, Path targetFile, String relativePath, TransferOperation operation) {
         try {
-            // Create current snapshot
-            FileSnapshot newSnapshot = snapshotService.createSnapshot(sourceFile, relativePath);
-            FileSnapshot oldSnapshot = snapshotCache.get(relativePath);
+            // Check if target file exists - if not, we need to transfer regardless of snapshot comparison
+            boolean targetExists = Files.exists(targetFile);
+            boolean snapshotIndicatesTransfer = sqliteSnapshotService.needsTransfer(sourceFile, relativePath);
+            
+            logger.debug("Processing file {}: targetExists={}, snapshotIndicatesTransfer={}, fullMode={}", 
+                         relativePath, targetExists, snapshotIndicatesTransfer, operation.isFullMode());
+            
+            if (operation.isFullMode() || snapshotIndicatesTransfer || !targetExists) {
+                // Get the old snapshot for delta calculation
+                Optional<FileSnapshotEntity> oldSnapshotEntity = sqliteSnapshotService.getLatestSnapshot(relativePath);
+                FileSnapshot oldSnapshot = oldSnapshotEntity.map(sqliteSnapshotService::convertToModel).orElse(null);
 
-            if (operation.isFullMode() || snapshotService.needsTransfer(newSnapshot, oldSnapshot)) {
                 // Calculate and apply delta
                 FileDelta delta = deltaCalculationService.calculateDelta(sourceFile, oldSnapshot, relativePath);
                 deltaApplicationService.applyDelta(targetFile, delta);
 
-                // Update snapshot cache
-                snapshotCache.put(relativePath, newSnapshot);
+                // Create and save new snapshot
+                FileSnapshotEntity newSnapshotEntity = sqliteSnapshotService.createAndSaveSnapshot(sourceFile, relativePath);
+                FileSnapshot newSnapshot = sqliteSnapshotService.convertToModel(newSnapshotEntity);
 
                 // Log the transfer
                 transferLogService.logTransfer(relativePath, newSnapshot, delta);
 
-                return String.format("✓ %s (%.1f%% efficiency)", relativePath, delta.getEfficiencyPercentage());
+                String reason = !targetExists ? "target missing" : 
+                              snapshotIndicatesTransfer ? "content changed" : "full mode";
+                return String.format("✓ %s (%.1f%% efficiency) [%s]", relativePath, delta.getEfficiencyPercentage(), reason);
             } else {
                 return String.format("○ %s (unchanged)", relativePath);
             }
@@ -318,9 +300,6 @@ public class TransferService {
                     results.add(String.format("✗ Deleted: %s", relativePath));
                     logger.info("Deleted file: {}", relativePath);
                     
-                    // Remove from snapshot cache
-                    snapshotCache.remove(relativePath);
-                    
                     // Log the deletion
                     transferLogService.logTransferError(relativePath, "File deleted during full sync");
                 }
@@ -331,32 +310,6 @@ public class TransferService {
                 results.add(error);
                 logger.error("Failed to delete file: {}", targetFile, e);
             }
-        }
-    }
-
-    /**
-     * Load snapshots from disk
-     */
-    private void loadSnapshots() {
-        try {
-            Map<String, FileSnapshot> loadedSnapshots = snapshotPersistence.loadSnapshots();
-            snapshotCache.clear();
-            snapshotCache.putAll(loadedSnapshots);
-            logger.info("Loaded {} snapshots from disk", loadedSnapshots.size());
-        } catch (Exception e) {
-            logger.error("Failed to load snapshots", e);
-        }
-    }
-
-    /**
-     * Save snapshots to disk
-     */
-    private void saveSnapshots() {
-        try {
-            snapshotPersistence.saveSnapshots(snapshotCache);
-            logger.debug("Saved {} snapshots to disk", snapshotCache.size());
-        } catch (Exception e) {
-            logger.error("Failed to save snapshots", e);
         }
     }
 
@@ -454,7 +407,7 @@ public class TransferService {
 
             status.put("synced_files", String.valueOf(syncedFiles));
             status.put("out_of_sync_files", String.valueOf(outOfSyncCount));
-            status.put("total_snapshots", String.valueOf(snapshotCache.size()));
+            status.put("total_snapshots", String.valueOf(sqliteSnapshotService.getStatistics().getTotalSnapshots()));
             status.put("mode", "Incremental (DC→DR), Full (DR→DC)");
 
         } catch (Exception e) {
@@ -551,5 +504,13 @@ public class TransferService {
      */
     public boolean isTransferInProgress() {
         return transferInProgress.get();
+    }
+
+    /**
+     * Clear old snapshots - useful for debugging incremental transfer issues
+     */
+    public void clearOldSnapshots() {
+        sqliteSnapshotService.cleanupOldSnapshots();
+        logger.info("Old snapshots cleared from database");
     }
 }

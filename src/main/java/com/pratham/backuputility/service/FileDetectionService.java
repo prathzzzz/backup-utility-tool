@@ -44,6 +44,8 @@ public class FileDetectionService {
 
         try {
             List<Path> sourceFiles = FileSystemUtil.getAllFiles(sourceBase);
+            logger.info("Checking {} source files for changes from {} to {}", 
+                sourceFiles.size(), sourceBase, targetBase);
 
             for (Path sourceFile : sourceFiles) {
                 String relativePath = sourceBase.relativize(sourceFile).toString();
@@ -51,10 +53,11 @@ public class FileDetectionService {
 
                 if (needsTransfer(sourceFile, targetFile)) {
                     changedFiles.add(sourceFile);
+                    logger.info("File {} needs transfer", relativePath);
                 }
             }
 
-            logger.debug("Detected {} changed files from {} to {}",
+            logger.info("Detected {} changed files from {} to {}",
                 changedFiles.size(), sourceBase, targetBase);
 
         } catch (IOException e) {
@@ -104,11 +107,20 @@ public class FileDetectionService {
     private boolean needsTransfer(Path sourceFile, Path targetFile) {
         try {
             if (!Files.exists(targetFile)) {
+                logger.info("File {} needs transfer: target doesn't exist", sourceFile.getFileName());
                 return true;
             }
 
             // Use fast sample-based comparison
-            return com.pratham.backuputility.util.FileSystemUtil.areFilesDifferent(sourceFile, targetFile);
+            boolean different = com.pratham.backuputility.util.FileSystemUtil.areFilesDifferent(sourceFile, targetFile);
+            
+            if (different) {
+                logger.info("File {} needs transfer: files are different", sourceFile.getFileName());
+            } else {
+                logger.debug("File {} is identical, no transfer needed", sourceFile.getFileName());
+            }
+            
+            return different;
 
         } catch (Exception e) {
             logger.warn("Error comparing files {} and {}: {}", sourceFile, targetFile, e.getMessage());

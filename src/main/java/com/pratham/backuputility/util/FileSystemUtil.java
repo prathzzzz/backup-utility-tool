@@ -155,12 +155,53 @@ public final class FileSystemUtil {
                 return false;
             }
 
-            // For any file, just do a simple hash of first 1KB + last 1KB
+            // For small files (< 8KB), do full comparison
+            if (size1 < 8192) {
+                return !fullFileEquals(file1, file2);
+            }
+
+            // For larger files, use quick hash comparison
             return !quickHashEquals(file1, file2, size1);
 
         } catch (IOException e) {
             System.err.println("Error comparing files: " + e.getMessage());
             return true; // Assume different if we can't compare
+        }
+    }
+
+    /**
+     * Full file comparison for small files
+     */
+    private static boolean fullFileEquals(Path file1, Path file2) throws IOException {
+        try (java.nio.channels.SeekableByteChannel channel1 = Files.newByteChannel(file1);
+             java.nio.channels.SeekableByteChannel channel2 = Files.newByteChannel(file2)) {
+            
+            java.nio.ByteBuffer buffer1 = java.nio.ByteBuffer.allocate(1024);
+            java.nio.ByteBuffer buffer2 = java.nio.ByteBuffer.allocate(1024);
+            
+            while (true) {
+                buffer1.clear();
+                buffer2.clear();
+                
+                int bytesRead1 = channel1.read(buffer1);
+                int bytesRead2 = channel2.read(buffer2);
+                
+                if (bytesRead1 != bytesRead2) {
+                    return false;
+                }
+                
+                if (bytesRead1 == -1) {
+                    // Both files ended at the same time
+                    return true;
+                }
+                
+                buffer1.flip();
+                buffer2.flip();
+                
+                if (!buffer1.equals(buffer2)) {
+                    return false;
+                }
+            }
         }
     }
 
