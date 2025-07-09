@@ -6,6 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
+import java.util.List;
+
 /**
  * Service for scheduled maintenance tasks
  */
@@ -19,6 +23,9 @@ public class MaintenanceService {
 
     @Autowired
     private TransferLogService transferLogService;
+
+    @Autowired
+    private TransferService transferService;
 
     /**
      * Clean up old snapshots daily at 2 AM
@@ -70,6 +77,35 @@ public class MaintenanceService {
 
         } catch (Exception e) {
             logger.error("Failed to log statistics", e);
+        }
+    }
+
+    /**
+     * Automatic backup from DC to DR every 3 hours
+     */
+    @Scheduled(cron = "0 0 */3 * * ?")
+    public void automaticBackup() {
+        logger.info("Starting scheduled automatic backup from DC to DR");
+        try {
+            // Check if a transfer is already in progress
+            if (transferService.isTransferInProgress()) {
+                logger.warn("Skipping automatic backup - transfer already in progress");
+                return;
+            }
+
+            // Perform incremental backup from DC to DR
+            List<String> results = transferService.performTransfer("DC_TO_DR", "INCREMENTAL");
+            
+            // Log summary of results
+            long successfulTransfers = results.stream().filter(r -> r.startsWith("✓")).count();
+            long failedTransfers = results.stream().filter(r -> r.startsWith("✗")).count();
+            long unchangedFiles = results.stream().filter(r -> r.startsWith("○")).count();
+            
+            logger.info("Automatic backup completed - Success: {}, Failed: {}, Unchanged: {}", 
+                successfulTransfers, failedTransfers, unchangedFiles);
+                
+        } catch (Exception e) {
+            logger.error("Failed to perform automatic backup", e);
         }
     }
 }
